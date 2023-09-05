@@ -1,42 +1,45 @@
 # Gitd - Git Parse Url
+
 Parse git url simple way. (SCP-Style url not supported yet)
 
 ## Feature
+
 - Use the same code of [Gitdownloadmanager Api Service](https://gitdownloadmanager.com)
 - Generate Github, Bitbucket, Gitlab repository download full package url address
 - Supports all git url address without scp-styles
 
 ## Git Repository
+
 ```go
 // git repository
 type GitRepository struct {
-	TempDir string
-	SSID    string
+ TempDir string
+ SSID    string
 
-	debugMode bool
+ debugMode bool
 
-	Url       string // clean url after parse
-	RawUrl    string // user set this dirty url
-	CloneUrl  string
-	RemoteUrl string // remote url for git git@github.com:username/repo.git
-	QueryUrl  string // for search bar
-	DirPath   string
+ Url       string // clean url after parse
+ RawUrl    string // user set this dirty url
+ CloneUrl  string
+ RemoteUrl string // remote url for git git@github.com:username/repo.git
+ QueryUrl  string // for search bar
+ DirPath   string
 
-	IsFile bool
+ IsFile bool
 
-	Protocol    string // https|ssh (scp-style - not supported yet)
-	Scheme      string
-	Hostname    string
-	RawPath     string
-	Path        string // file or folder path in this repository for download
-	Owner       string
-	Name        string // repository name - repo
-	DummyBranch string // if branch name is empty, use this name
-	Branch      string
+ Protocol    string // https|ssh (scp-style - not supported yet)
+ Scheme      string
+ Hostname    string
+ RawPath     string
+ Path        string // file or folder path in this repository for download
+ Owner       string
+ Name        string // repository name - repo
+ DummyBranch string // if branch name is empty, use this name
+ Branch      string
 
-	ArchiveUrl   string // download branch package
-	FileUrl      string // download from single file url
-	DownloadType int
+ ArchiveUrl   string // download branch package
+ FileUrl      string // download from single file url
+ DownloadType int
 }
 ```
 
@@ -66,6 +69,7 @@ fmt.Prinf("GitRepository.Parse() = %#v", gitRepository)
 ```
 
 response
+
 ```go
 GitRepository{
     TempDir:      "",

@@ -49,6 +49,7 @@ type GitRepository struct {
 	Name        string // repository name - repo
 	DummyBranch string // if branch name is empty, use this name
 	Branch      string
+	IsTagBranch bool // for gitea.com tag based url
 
 	ArchiveUrl   string // download branch package
 	FileUrl      string // download from single file url
@@ -59,6 +60,7 @@ func NewGitRepository(tempDir, ssid, rawUrl, branch string) *GitRepository {
 	return &GitRepository{
 		TempDir:      tempDir,
 		SSID:         ssid,
+		debugMode:    false,
 		Url:          "",
 		RawUrl:       rawUrl,
 		CloneUrl:     "",
@@ -75,6 +77,7 @@ func NewGitRepository(tempDir, ssid, rawUrl, branch string) *GitRepository {
 		Name:         "",
 		DummyBranch:  "gitd-branch",
 		Branch:       branch,
+		IsTagBranch:  false,
 		ArchiveUrl:   "",
 		FileUrl:      "",
 		DownloadType: -1,
@@ -122,6 +125,16 @@ https://bitbucket.org/<owner>/<repo>/src/<branch>/ <- https://bitbucket.org/tiag
 https://bitbucket.org/<owner>/<repo>/src/<branch>/cmd/ -> folder
 https://bitbucket.org/<owner>/<repo>/src/<branch>/cmd/main.go -> single file
 
+https://gitea.com/<owner>/<repo>
+https://gitea.com/<owner>/<repo>.git -> .git remove
+https://gitea.com/<owner>/<repo>/branch/<branch>/lib -> folder
+https://gitea.com/<owner>/<repo>/tag/<branch>/lib -> folder
+https://gitea.com/<owner>/<repo>/src/branch/<branch>/lib/filesaver.min.js -> single file
+https://gitea.com/<owner>/<repo>/src/tag/<branch>/lib/filesaver.min.js -> single file
+https://gitea.com/<owner>/<repo>/src/branch/<branch>/internal/url/url.go#L20 -> #L20 removes
+https://gitea.com/<owner>/<repo>/src/tag/<branch>/internal/url/url.go#L20 -> #L20 removes
+https://gitea.com/<owner>/<repo>/src/branch/<branch>/internal/url/url.go?deneme=12&obaraks=noway#L20 -> ?deneme=12&obaraks=noway#L20 remove
+https://gitea.com/<owner>/<repo>/src/tag/<branch>/internal/url/url.go?deneme=12&obaraks=noway#L20 -> ?deneme=12&obaraks=noway#L20 remove
 
 Supported: https://github.com/cli/cli/tree/marwan/localcs/api -> branch: marwan/localcs -> how to split this?
 
@@ -134,7 +147,7 @@ func (r *GitRepository) Parse(sub string, direction int, filename string) error 
 	r.RawUrl = re.ReplaceAllString(r.RawUrl, "/")
 	//r.RawUrl = strings.Replace(r.RawUrl, "/-/", "/", 1) // fix: gitlab strange url
 	if r.isDebugModeActive() {
-		fmt.Println(r.RawUrl, "filename", filename)
+		fmt.Println("raw url", r.RawUrl, "filename", filename)
 	}
 
 	// has to download single file
@@ -143,8 +156,10 @@ func (r *GitRepository) Parse(sub string, direction int, filename string) error 
 		re2 := regexp.MustCompile(`(?s)/tree/`)
 		r.RawUrl = re2.ReplaceAllString(r.RawUrl, "/blob/")
 
+		// little fixed - we know this is file not directory
+		r.IsFile = true
 		if r.isDebugModeActive() {
-			fmt.Println(r.RawUrl, "filename", filename)
+			fmt.Println("raw url", r.RawUrl, "filename", filename)
 		}
 	}
 
@@ -168,17 +183,22 @@ func (r *GitRepository) Parse(sub string, direction int, filename string) error 
 	r.RawPath = strings.Replace(r.RawPath, u.RawFragment, "", 1)
 	r.RawPath = strings.Replace(r.RawPath, u.RawQuery, "", 1)
 	//r.RawPath = strings.Replace(r.RawPath, "/-/", "/", 1) // fix: gitlab strange url
-	r.IsFile = !strings.HasSuffix(r.RawUrl, "/")   // only useful for bitbucket.org url
+
+	// little fix - file recheck
+	if !r.IsFile {
+		r.IsFile = !strings.HasSuffix(r.RawUrl, "/") // only useful for bitbucket.org url
+	}
+
 	r.RawPath = strings.TrimSuffix(r.RawPath, "/") // remove last slashes
 
 	if r.isDebugModeActive() {
-		fmt.Println(r.RawPath)
+		fmt.Println("raw path", r.RawPath)
 	}
 
 	// repeater counter
 	repeater := strings.Count(r.RawPath, "/")
 	if r.isDebugModeActive() {
-		fmt.Println(repeater, "repeater")
+		fmt.Println("repeater", repeater)
 	}
 	if repeater < 2 {
 		return errors.New("not valid git url")
@@ -191,7 +211,11 @@ func (r *GitRepository) Parse(sub string, direction int, filename string) error 
 	}
 
 	// n[1] = owner, n[2] = repo, n[3] = tree|blob, n[4] = branch, n[5] = ../../../...
-	n := strings.SplitN(r.RawPath, "/", 6+branchNameRepeater) // fixed n times all urls
+	nStart := 6
+	if r.Hostname == "gitea.com" {
+		nStart++
+	}
+	n := strings.SplitN(r.RawPath, "/", nStart+branchNameRepeater) // fixed n times all urls
 	r.Owner = n[1]
 	r.Name = n[2]
 
@@ -208,21 +232,41 @@ func (r *GitRepository) Parse(sub string, direction int, filename string) error 
 		if n[3] == "blob" || n[3] == "tree" || n[3] == "src" {
 			if branchNameRepeater > 0 {
 				// branch name contains slash
-				if len(n) > (4 + branchNameRepeater + 1) {
-					r.Path = n[4+branchNameRepeater+1]
+				if r.Hostname == "gitea.com" {
+					if len(n) > (5 + branchNameRepeater + 1) {
+						r.Path = n[5+branchNameRepeater+1]
+					}
+				} else {
+					if len(n) > (4 + branchNameRepeater + 1) {
+						r.Path = n[4+branchNameRepeater+1]
+					}
 				}
 			} else {
-				r.Branch = n[4]
-				if len(n) > 5 {
-					r.Path = n[5]
+				if r.Hostname == "gitea.com" {
+					if n[4] == "tag" {
+						r.IsTagBranch = true
+					}
+
+					r.Branch = n[5]
+					if len(n) > 6 {
+						r.Path = n[6]
+					}
+				} else {
+					r.Branch = n[4]
+					if len(n) > 5 {
+						r.Path = n[5]
+					}
 				}
 			}
 
 			// Bug and TODO
 			// Bitbucket.org url has src not tree or blob.
+			// Gitea.com url has src not tree or blob.
 			// if url not slashes, after download system failed because IsFile value not correct
 			// r.IsFile = !strings.HasSuffix(r.Path, "/")
-			if n[3] == "tree" {
+			/*if r.Hostname == "gitea.com" {
+				r.IsFile = false
+			} else*/if n[3] == "tree" {
 				r.IsFile = false
 			} else if n[3] == "blob" {
 				r.IsFile = true
@@ -328,6 +372,10 @@ func (r *GitRepository) getArchiveUrl() string {
 	case "bitbucket.org":
 		// https://[HOSTNAME]/[OWNER]/[NAME]/get/[BRANCH].[EXT]
 		return fmt.Sprintf("https://%s/%s/%s/get/%s.%s", r.Hostname, r.Owner, r.Name, r.Branch, "zip")
+	case "gitea.com":
+		// https://[HOSTNAME]/[OWNER]/[NAME]/archive/[BRANCH].[EXT]
+		// gitea archive url redirect always
+		return fmt.Sprintf("https://%s/%s/%s/archive/%s.%s", r.Hostname, r.Owner, r.Name, r.Branch, "zip")
 	}
 
 	return ""
@@ -348,6 +396,16 @@ func (r *GitRepository) getFileUrl(path string) string {
 		// https://[HOSTNAME]/[OWNER]/[NAME]/raw/[BRANCH]/[PATH]
 		// https://bitbucket.org/micovery/sock-rpc/raw/v1.0.0/package.json
 		return fmt.Sprintf("https://%s/%s/%s/raw/%s/%s", r.Hostname, r.Owner, r.Name, r.Branch, path)
+	case "gitea.com":
+		// https://[HOSTNAME]/[OWNER]/[NAME]/raw/branch/[BRANCH]/[PATH]
+		// https://[HOSTNAME]/[OWNER]/[NAME]/raw/tag/[BRANCH]/[PATH]
+		// https://gitea.com/XIU2/TrackersListCollection/raw/branch/master/LICENSE
+		// https://gitea.com/XIU2/TrackersListCollection/raw/tag/20201211/LICENSE
+		branchOrTag := "branch"
+		if r.IsTagBranch {
+			branchOrTag = "tag"
+		}
+		return fmt.Sprintf("https://%s/%s/%s/raw/%s/%s/%s", r.Hostname, r.Owner, r.Name, branchOrTag, r.Branch, path)
 	}
 
 	return ""
@@ -377,6 +435,14 @@ func (r *GitRepository) GetQueryUrl(path string) string {
 		case "bitbucket.org":
 			// https://[HOSTNAME]/[OWNER]/[NAME]/src/[BRANCH]/[PATH]
 			return fmt.Sprintf("%s/src/%s/", baseUrl, filepath.Join(r.Branch, path))
+		case "gitea.com":
+			// https://[HOSTNAME]/[OWNER]/[NAME]/src/branch/[BRANCH]/[PATH]
+			// https://[HOSTNAME]/[OWNER]/[NAME]/src/tag/[TAG]/[PATH]
+			branchOrTag := "branch"
+			if r.IsTagBranch {
+				branchOrTag = "tag"
+			}
+			return fmt.Sprintf("%s/src/%s/%s/", baseUrl, branchOrTag, filepath.Join(r.Branch, path))
 		}
 	}
 

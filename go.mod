@@ -1,3 +1,3 @@
 module github.com/git-download-manager/git-url-parse
 
-go 1.18
+go 1.22

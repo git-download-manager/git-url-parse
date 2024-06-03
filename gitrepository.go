@@ -136,6 +136,13 @@ https://gitea.com/<owner>/<repo>/src/tag/<branch>/internal/url/url.go#L20 -> #L2
 https://gitea.com/<owner>/<repo>/src/branch/<branch>/internal/url/url.go?deneme=12&obaraks=noway#L20 -> ?deneme=12&obaraks=noway#L20 remove
 https://gitea.com/<owner>/<repo>/src/tag/<branch>/internal/url/url.go?deneme=12&obaraks=noway#L20 -> ?deneme=12&obaraks=noway#L20 remove
 
+https://gitee.com/<owner>/<repo>
+https://gitee.com/<owner>/<repo>.git -> .git remove
+https://gitee.com/<owner>/<repo>/tree/<branch>/lib -> folder
+https://gitee.com/<owner>/<repo>/blob/<branch>/lib/filesaver.min.js -> single file
+https://gitee.com/<owner>/<repo>/blob/<branch>/internal/url/url.go#L20 -> #L20 removes
+https://gitee.com/<owner>/<repo>/blob/<branch>/internal/url/url.go?deneme=12&obaraks=noway#L20 -> ?deneme=12&obaraks=noway#L20 remove
+
 Supported: https://github.com/cli/cli/tree/marwan/localcs/api -> branch: marwan/localcs -> how to split this?
 
 TODO: Url and RawUrl are the same? Why?
@@ -376,6 +383,9 @@ func (r *GitRepository) getArchiveUrl() string {
 		// https://[HOSTNAME]/[OWNER]/[NAME]/archive/[BRANCH].[EXT]
 		// gitea archive url redirect always
 		return fmt.Sprintf("https://%s/%s/%s/archive/%s.%s", r.Hostname, r.Owner, r.Name, r.Branch, "zip")
+	case "gitee.com":
+		// Not supported right now
+		return ""
 	}
 
 	return ""
@@ -406,6 +416,11 @@ func (r *GitRepository) getFileUrl(path string) string {
 			branchOrTag = "tag"
 		}
 		return fmt.Sprintf("https://%s/%s/%s/raw/%s/%s/%s", r.Hostname, r.Owner, r.Name, branchOrTag, r.Branch, path)
+	case "gitee.com":
+		// https://[HOSTNAME]/[OWNER]/[NAME]/raw/[BRANCH]/[PATH]
+		// https://gitee.com/micovery/sock-rpc/raw/dev/package.json
+		// https://gitee.com/micovery/sock-rpc/raw/v1.0.0/package.json
+		return fmt.Sprintf("https://%s/%s/%s/raw/%s/%s", r.Hostname, r.Owner, r.Name, r.Branch, path)
 	}
 
 	return ""
@@ -443,6 +458,9 @@ func (r *GitRepository) GetQueryUrl(path string) string {
 				branchOrTag = "tag"
 			}
 			return fmt.Sprintf("%s/src/%s/%s/", baseUrl, branchOrTag, filepath.Join(r.Branch, path))
+		case "gitee.com":
+			// https://[HOSTNAME]/[OWNER]/[NAME]/blob/[BRANCH]/[PATH]
+			return fmt.Sprintf("%s/tree/%s/", baseUrl, filepath.Join(r.Branch, path))
 		}
 	}
 

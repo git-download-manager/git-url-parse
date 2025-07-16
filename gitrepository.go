@@ -144,6 +144,7 @@ https://gitee.com/<owner>/<repo>/blob/<branch>/internal/url/url.go#L20 -> #L20 r
 https://gitee.com/<owner>/<repo>/blob/<branch>/internal/url/url.go?deneme=12&obaraks=noway#L20 -> ?deneme=12&obaraks=noway#L20 remove
 
 Supported: https://github.com/cli/cli/tree/marwan/localcs/api -> branch: marwan/localcs -> how to split this?
+Fixed: https://gitlab.com/era-europa-eu/public/interoperable-data-programme/era-ontology/rail-data-forum-2025/practical-data-consumption-workshop/-/tree/main/materials?ref_type=heads Loooonnngggg gitlab urls
 
 TODO: Url and RawUrl are the same? Why?
 */
@@ -223,11 +224,37 @@ func (r *GitRepository) Parse(sub string, direction int, filename string) error 
 		nStart++
 	}
 	n := strings.SplitN(r.RawPath, "/", nStart+branchNameRepeater) // fixed n times all urls
+	if r.Hostname == "gitlab.com" /*&& r.RawUrl == "https://gitlab.com/era-europa-eu/public/interoperable-data-programme/era-ontology/rail-data-forum-2025/practical-data-consumption-workshop/tree/main/materials?ref_type=heads"*/ {
+		m := strings.Split(r.RawPath, "/")
+		var splitPoint int
+		for i, segment := range m {
+			if segment == "tree" {
+				splitPoint = i
+				break
+			}
+		}
+
+		if splitPoint >= 4 {
+			// detect looonnnngggg folder urls
+			n = []string{
+				"",
+				strings.Join(m[1:splitPoint-1], "/"), // "era-europa-eu/public/interoperable-data-programme/era-ontology/rail-data-forum-2025", // owner
+				m[splitPoint-1],                      // "practical-data-consumption-workshop",                                                 // name
+				m[splitPoint],                        // "tree",                                                                                // type blob|tree|src
+				m[splitPoint+1],                      // "main",                                                                                // branch
+				strings.Join(m[splitPoint+2:], "/"),  // "materials",
+			}
+			if r.isDebugModeActive() {
+				fmt.Println("gitlab looonnnggg url:", n)
+			}
+
+		}
+	}
 	r.Owner = n[1]
 	r.Name = n[2]
 
 	if r.isDebugModeActive() {
-		fmt.Println("split n: ", n, "branchNameRepeater", branchNameRepeater, "sub", sub)
+		fmt.Println("split n:", n, "branchNameRepeater", branchNameRepeater, "sub", sub)
 	}
 
 	if strings.HasSuffix(r.Name, ".git") {
@@ -273,9 +300,11 @@ func (r *GitRepository) Parse(sub string, direction int, filename string) error 
 			// r.IsFile = !strings.HasSuffix(r.Path, "/")
 			/*if r.Hostname == "gitea.com" {
 				r.IsFile = false
-			} else*/if n[3] == "tree" {
+			} else*/
+			switch n[3] {
+			case "tree":
 				r.IsFile = false
-			} else if n[3] == "blob" {
+			case "blob":
 				r.IsFile = true
 			}
 		} else {
